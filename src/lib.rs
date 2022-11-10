@@ -75,7 +75,7 @@ impl Responder {
 
     pub fn with_default_handle_and_ip_list_and_hostname(
         allowed_ips: Vec<IpAddr>,
-        hostname: &str
+        hostname: String
     ) -> io::Result<(Responder, ResponderTask)> {
 
         let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
