@@ -40,10 +40,82 @@ pub struct Service {
 type ResponderTask = Box<dyn Future<Output = ()> + Send + Unpin>;
 
 impl Responder {
+
+    pub fn new_with_hostname(hostname: &str) -> io::Result<Responder> {
+        Self::new_with_ip_list_and_hostname(Vec::new(), hostname)
+    }
+
+    /// Spawn a `Responder` task on an new os thread.
+    /// DNS response records will have the reported IPs limited to those passed in here.
+    /// This can be particularly useful on machines with lots of networks created by tools such as docker.
+    pub fn new_with_ip_list_and_hostname(allowed_ips: Vec<IpAddr>, hostname: &str) -> io::Result<Responder> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(0);
+        thread::Builder::new()
+            .name("mdns-responder".to_owned())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async {
+                    match Self::with_default_handle_and_ip_list_and_hostname(allowed_ips, hostname) {
+                        Ok((responder, task)) => {
+                            tx.send(Ok(responder)).expect("tx responder channel closed");
+                            task.await;
+                        }
+                        Err(e) => tx.send(Err(e)).expect("tx responder channel closed"),
+                    }
+                })
+            })?;
+        rx.recv().expect("rx responder channel closed")
+    }
+    /// Spawn a `Responder` on the default tokio handle.
+    /// DNS response records will have the reported IPs limited to those passed in here.
+    /// This can be particularly useful on machines with lots of networks created by tools such as docker.
+
+    pub fn with_default_handle_and_ip_list_and_hostname(
+        allowed_ips: Vec<IpAddr>,
+        hostname: &str
+    ) -> io::Result<(Responder, ResponderTask)> {
+
+        if !hostname.ends_with(".local") {
+            hostname.push_str(".local");
+        }
+
+        let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
+
+        let v4 = FSM::<Inet>::new(&services, allowed_ips.clone());
+        let v6 = FSM::<Inet6>::new(&services, allowed_ips);
+
+        let (task, commands): (ResponderTask, _) = match (v4, v6) {
+            (Ok((v4_task, v4_command)), Ok((v6_task, v6_command))) => {
+                let tasks = future::join(v4_task, v6_task).map(|((), ())| ());
+                (Box::new(tasks), vec![v4_command, v6_command])
+            }
+
+            (Ok((v4_task, v4_command)), Err(err)) => {
+                warn!("Failed to register IPv6 receiver: {:?}", err);
+                (Box::new(v4_task), vec![v4_command])
+            }
+
+            (Err(err), _) => return Err(err),
+        };
+
+        let commands = CommandSender(commands);
+        let responder = Responder {
+            services: services,
+            commands: RefCell::new(commands.clone()),
+            shutdown: Arc::new(Shutdown(commands)),
+        };
+
+        Ok((responder, task))
+    }
+
     /// Spawn a `Responder` task on an new os thread.
     pub fn new() -> io::Result<Responder> {
         Self::new_with_ip_list(Vec::new())
     }
+
     /// Spawn a `Responder` task on an new os thread.
     /// DNS response records will have the reported IPs limited to those passed in here.
     /// This can be particularly useful on machines with lots of networks created by tools such as docker.
