@@ -78,7 +78,7 @@ impl Responder {
         hostname: &str
     ) -> io::Result<(Responder, ResponderTask)> {
 
-        let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
+        let services = Arc::new(RwLock::new(ServicesInner::new(hostname.to_owned())));
 
         let v4 = FSM::<Inet>::new(&services, allowed_ips.clone());
         let v6 = FSM::<Inet6>::new(&services, allowed_ips);
