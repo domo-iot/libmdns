@@ -78,10 +78,6 @@ impl Responder {
         hostname: &str
     ) -> io::Result<(Responder, ResponderTask)> {
 
-        if !hostname.ends_with(".local") {
-            hostname.push_str(".local");
-        }
-
         let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
 
         let v4 = FSM::<Inet>::new(&services, allowed_ips.clone());
