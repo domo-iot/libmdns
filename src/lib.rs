@@ -41,14 +41,14 @@ type ResponderTask = Box<dyn Future<Output = ()> + Send + Unpin>;
 
 impl Responder {
 
-    pub fn new_with_hostname(hostname: &str) -> io::Result<Responder> {
+    pub fn new_with_hostname(hostname: String) -> io::Result<Responder> {
         Self::new_with_ip_list_and_hostname(Vec::new(), hostname)
     }
 
     /// Spawn a `Responder` task on an new os thread.
     /// DNS response records will have the reported IPs limited to those passed in here.
     /// This can be particularly useful on machines with lots of networks created by tools such as docker.
-    pub fn new_with_ip_list_and_hostname(allowed_ips: Vec<IpAddr>, hostname: &str) -> io::Result<Responder> {
+    pub fn new_with_ip_list_and_hostname(allowed_ips: Vec<IpAddr>, hostname: String) -> io::Result<Responder> {
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
         thread::Builder::new()
             .name("mdns-responder".to_owned())
@@ -78,7 +78,7 @@ impl Responder {
         hostname: &str
     ) -> io::Result<(Responder, ResponderTask)> {
 
-        let services = Arc::new(RwLock::new(ServicesInner::new(hostname.to_owned())));
+        let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
 
         let v4 = FSM::<Inet>::new(&services, allowed_ips.clone());
         let v6 = FSM::<Inet6>::new(&services, allowed_ips);
